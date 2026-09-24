@@ -1,0 +1,113 @@
+services:
+  # ── PlanGuard application database ─────────────────────────────────────────
+  app-postgres:
+    image: postgres:16-alpine
+    container_name: planguard-app-postgres
+    environment:
+      POSTGRES_USER: planguard
+      POSTGRES_PASSWORD: planguard
+      POSTGRES_DB: planguard
+    ports:
+      - "5432:5432"
+    volumes:
+      - app-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U planguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis (RQ queue) ────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: planguard-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Fixture / target PostgreSQL (local dev target DB) ───────────────────────
+  fixture-postgres:
+    image: postgres:16-alpine
+    container_name: planguard-fixture-postgres
+    environment:
+      POSTGRES_USER: fixture
+      POSTGRES_PASSWORD: fixture
+      POSTGRES_DB: fixture_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - fixture-postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/fixtures:/docker-entrypoint-initdb.d:ro
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c pg_stat_statements.max=10000
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fixture"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── FastAPI backend ─────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: ../../infra/docker/api.Dockerfile
+    container_name: planguard-api
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://planguard:planguard@app-postgres:5432/planguard
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      app-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── RQ Worker ───────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ./apps/api
+      dockerfile: ../../infra/docker/api.Dockerfile
+    container_name: planguard-worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://planguard:planguard@app-postgres:5432/planguard
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      app-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/app
+    command: rq worker --with-scheduler planguard-default
+
+  # ── React Frontend ──────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./apps/web
+      dockerfile: ../../infra/docker/web.Dockerfile
+    container_name: planguard-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+    environment:
+      VITE_API_URL: http://localhost:8000
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  app-postgres-data:
+  fixture-postgres-data:
