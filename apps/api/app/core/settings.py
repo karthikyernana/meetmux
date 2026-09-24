@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, PostgresDsn, RedisDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,7 +30,28 @@ class Settings(BaseSettings):
         default="CHANGE_ME_32_BYTE_BASE64_KEY_XXXX",
         description="Fernet key for encrypting DB credentials at rest",
     )
-    allowed_origins: list[str] = Field(default=["http://localhost:5173"])
+    allowed_origins_raw: Any = Field(
+        default=["http://localhost:5173"],
+        alias="allowed_origins",
+    )
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        val = self.allowed_origins_raw
+        if isinstance(val, str):
+            val = val.strip()
+            if val.startswith("[") and val.endswith("]"):
+                import json
+                try:
+                    res = json.loads(val)
+                    if isinstance(res, list):
+                        return [str(x) for x in res]
+                except Exception:
+                    pass
+            return [x.strip() for x in val.split(",") if x.strip()]
+        if isinstance(val, list):
+            return [str(x) for x in val]
+        return ["http://localhost:5173"]
 
     # AI — all optional / disabled by default
     llm_enabled: bool = False

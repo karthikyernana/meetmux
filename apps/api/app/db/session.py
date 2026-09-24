@@ -17,6 +17,14 @@ class Base(DeclarativeBase):
     pass
 
 
+# Ensure all domain models are imported for SQLAlchemy mapper resolution
+import app.domains.workspaces.models  # noqa: F401, E402
+import app.domains.workload.models  # noqa: F401, E402
+import app.domains.plans.models  # noqa: F401, E402
+import app.domains.indexes.models  # noqa: F401, E402
+import app.domains.experiments.models  # noqa: F401, E402
+
+
 def _build_async_engine() -> object:
     settings = get_settings()
     dsn = str(settings.database_url)

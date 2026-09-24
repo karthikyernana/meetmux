@@ -1,54 +1,77 @@
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, Play, TrendingDown, Layers } from "lucide-react";
+import { Loader2, Play, TrendingDown, Layers, ArrowLeft, ArrowRight, AlertTriangle } from "lucide-react";
 import { api } from "@/api/client";
-import { formatBytes, cn } from "@/lib/utils";
+import { formatBytes } from "@/lib/utils";
 
 function CostDiff({ before, after }: { before: number; after: number }) {
-  const reduction = ((before - after) / before) * 100;
+  const reduction = before > 0 ? ((before - after) / before) * 100 : 0;
   const positive = after < before;
   return (
-    <div className="flex items-center gap-3">
-      <div className="text-right">
-        <p className="text-[10px] text-muted-foreground">Before</p>
-        <p className="text-base font-bold text-foreground">{before.toFixed(1)}</p>
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div>
+        <div style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase" }}>Before</div>
+        <div className="mono-sm" style={{ fontWeight: 600, fontSize: 15, color: "var(--text)" }}>{before.toFixed(1)}</div>
       </div>
-      <div className={cn("flex flex-col items-center px-2", positive ? "text-emerald-400" : "text-red-400")}>
-        <TrendingDown className="h-4 w-4" />
-        <p className="text-[10px] font-semibold">{positive ? "-" : "+"}{Math.abs(reduction).toFixed(1)}%</p>
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center",
+        color: positive ? "var(--ok)" : "var(--danger)",
+      }}>
+        <TrendingDown size={14} />
+        <span style={{ fontSize: 11, fontWeight: 600 }}>{positive ? "-" : "+"}{Math.abs(reduction).toFixed(1)}%</span>
       </div>
       <div>
-        <p className="text-[10px] text-muted-foreground">After</p>
-        <p className={cn("text-base font-bold", positive ? "text-emerald-400" : "text-foreground")}>
+        <div style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase" }}>After</div>
+        <div className="mono-sm" style={{ fontWeight: 600, fontSize: 15, color: positive ? "var(--ok)" : "var(--text)" }}>
           {after.toFixed(1)}
-        </p>
+        </div>
       </div>
     </div>
   );
 }
 
 export function ExperimentPage() {
-  const { experimentId } = useParams<{
+  const { workspaceId, queryId, experimentId } = useParams<{
+    workspaceId: string;
+    queryId: string;
     experimentId: string;
   }>();
+  const navigate = useNavigate();
 
   const { data: experiment, isLoading } = useQuery({
     queryKey: ["experiment", experimentId],
     queryFn: () => api.experiments.get(experimentId!),
     enabled: !!experimentId,
-    refetchInterval: (data) =>
-      data?.state?.data?.status === "running" ? 2000 : false,
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" || query.state.data?.status === "pending"
+        ? 1500
+        : false,
   });
 
   const runMutation = useMutation({
     mutationFn: () => api.experiments.run(experimentId!),
-    onSuccess: () => toast.success("Experiment started"),
+    onSuccess: () => toast.success("Experiment simulation started"),
     onError: (e: Error) => toast.error(e.message),
   });
 
-  if (isLoading) return <div className="p-8"><div className="h-96 rounded-xl shimmer" /></div>;
-  if (!experiment) return <div className="p-8 text-muted-foreground">Experiment not found.</div>;
+  if (isLoading) {
+    return (
+      <div className="page-body">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="skeleton" style={{ height: 60, marginBottom: 12, borderRadius: 6 }} />
+        ))}
+      </div>
+    );
+  }
+
+  if (!experiment) {
+    return (
+      <div className="page-body" style={{ color: "var(--text-3)" }}>
+        Experiment not found.
+      </div>
+    );
+  }
 
   const diff = experiment.plan_diff;
   const isPending = experiment.status === "pending";
@@ -56,139 +79,197 @@ export function ExperimentPage() {
   const isComplete = experiment.status === "complete";
 
   return (
-    <div className="p-8 animate-fade-in max-w-5xl">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="fade-in">
+      <div className="page-header">
         <div>
-          <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Experiment</p>
-          <h1 className="text-xl font-bold text-foreground">Plan Comparison</h1>
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ marginBottom: 8 }}
+            onClick={() => {
+              if (workspaceId && queryId) {
+                navigate(`/workspaces/${workspaceId}/queries/${queryId}`);
+              } else if (workspaceId) {
+                navigate(`/workspaces/${workspaceId}/workload`);
+              }
+            }}
+          >
+            <ArrowLeft size={12} /> Query detail
+          </button>
+          <h1 className="page-title">Plan experiment</h1>
+          <p className="page-sub">
+            Hypothetical execution plan comparison
+          </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {!experiment.hypopg_available && (
-            <span className="badge-review rounded-full px-2.5 py-0.5 text-[10px]">
-              HypoPG unavailable — lower confidence
+            <span className="badge badge-warn">
+              HypoPG unavailable · Fallback evaluation
             </span>
           )}
           {(isPending || isComplete) && (
             <button
               onClick={() => runMutation.mutate()}
               disabled={runMutation.isPending || isRunning}
-              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50"
+              className="btn btn-primary"
             >
-              {runMutation.isPending || isRunning
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <Play className="h-4 w-4" />}
-              {isComplete ? "Run Again" : "Run Experiment"}
+              {runMutation.isPending || isRunning ? (
+                <Loader2 size={13} className="spin" />
+              ) : (
+                <Play size={13} />
+              )}
+              {isComplete ? "Run again" : "Run experiment"}
+            </button>
+          )}
+          {isComplete && workspaceId && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => navigate(`/workspaces/${workspaceId}/recommendations`)}
+            >
+              Recommendations <ArrowRight size={13} />
             </button>
           )}
         </div>
       </div>
 
-      {/* Status banner */}
-      {isRunning && (
-        <div className="flex items-center gap-3 rounded-lg border border-primary/25 bg-primary/8 px-4 py-3 mb-6">
-          <Loader2 className="h-4 w-4 text-primary animate-spin" />
-          <p className="text-sm text-primary">Experiment running — fetching hypothetical plan…</p>
-        </div>
-      )}
-
-      {/* Summary cards */}
-      {isComplete && diff && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          {/* Cost */}
-          <div className="metric-card">
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Planner Cost</p>
-            {diff.cost && (
-              <CostDiff before={diff.cost.before} after={diff.cost.after} />
-            )}
+      <div className="page-body" style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 920 }}>
+        {/* Status banner */}
+        {isRunning && (
+          <div className="alert alert-warn">
+            <Loader2 size={14} className="spin" style={{ flexShrink: 0 }} />
+            <span>Experiment running — collecting hypothetical execution plan from PostgreSQL…</span>
           </div>
+        )}
 
-          {/* Scan type */}
-          <div className="metric-card">
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Scan Type</p>
-            {diff.scan_change ? (
-              <div>
-                <p className="text-xs">
-                  <span className={cn("rounded px-1.5 py-0.5 text-[10px]",
-                    diff.scan_change.before.includes("Seq") ? "node-seq-scan" : "node-index-scan")}>
-                    {diff.scan_change.before}
-                  </span>
-                  {" → "}
-                  <span className={cn("rounded px-1.5 py-0.5 text-[10px]",
-                    diff.scan_change.after.includes("Index") ? "node-index-scan" : "node-seq-scan")}>
-                    {diff.scan_change.after}
-                  </span>
-                </p>
-                {diff.scan_change.before !== diff.scan_change.after && (
-                  <p className="text-[10px] text-emerald-400 mt-1">✓ Plan changed</p>
+        {/* Diff summary stats */}
+        {isComplete && diff && (
+          <div className="stat-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            <div className="stat-cell">
+              <div className="stat-label">PLANNER COST</div>
+              <div style={{ marginTop: 6 }}>
+                {diff.cost ? (
+                  <CostDiff before={diff.cost.before} after={diff.cost.after} />
+                ) : (
+                  <span className="mono-sm">—</span>
                 )}
               </div>
-            ) : <p className="text-sm text-muted-foreground">No change</p>}
-          </div>
+            </div>
 
-          {/* Sort nodes */}
-          <div className="metric-card">
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Sort Nodes</p>
-            {diff.sort && (
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-foreground">{diff.sort.before}</span>
-                <span className="text-muted-foreground">→</span>
-                <span className={cn("text-lg font-bold",
-                  diff.sort.after < diff.sort.before ? "text-emerald-400" : "text-foreground")}>
-                  {diff.sort.after}
+            <div className="stat-cell">
+              <div className="stat-label">SCAN TYPE</div>
+              <div style={{ marginTop: 6 }}>
+                {diff.scan_change ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                    <span className="badge badge-warn">{diff.scan_change.before}</span>
+                    <span style={{ color: "var(--text-3)" }}>→</span>
+                    <span className="badge badge-ok">{diff.scan_change.after}</span>
+                  </div>
+                ) : (
+                  <span style={{ fontSize: 13, color: "var(--text-2)" }}>No scan change</span>
+                )}
+              </div>
+            </div>
+
+            <div className="stat-cell">
+              <div className="stat-label">SORT NODES</div>
+              <div style={{ marginTop: 6 }}>
+                {diff.sort ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14 }}>
+                    <span className="mono-sm" style={{ fontWeight: 600 }}>{diff.sort.before}</span>
+                    <span style={{ color: "var(--text-3)" }}>→</span>
+                    <span className="mono-sm" style={{
+                      fontWeight: 600,
+                      color: diff.sort.after < diff.sort.before ? "var(--ok)" : "inherit"
+                    }}>
+                      {diff.sort.after}
+                    </span>
+                    {diff.sort.before > diff.sort.after && (
+                      <span className="badge badge-ok">Sort removed</span>
+                    )}
+                  </div>
+                ) : (
+                  <span style={{ fontSize: 13, color: "var(--text-2)" }}>No sort change</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Storage estimate */}
+        {experiment.storage_estimate_bytes && (
+          <div className="card">
+            <div className="card-body" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px" }}>
+              <Layers size={16} style={{ color: "var(--accent-mid)" }} />
+              <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+                Estimated index size: <strong>{formatBytes(experiment.storage_estimate_bytes)}</strong>
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Plan JSON comparison */}
+        {isComplete && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title mono-sm">Baseline plan (Before)</span>
+                {experiment.before_cost != null && (
+                  <span className="badge badge-muted">cost {experiment.before_cost.toFixed(1)}</span>
+                )}
+              </div>
+              <pre style={{
+                padding: "12px 16px",
+                fontSize: 11,
+                fontFamily: "var(--font-mono)",
+                color: "var(--text-2)",
+                maxHeight: 300,
+                overflowY: "auto",
+                lineHeight: 1.5,
+                margin: 0,
+              }}>
+                {experiment.before_plan_json
+                  ? JSON.stringify(experiment.before_plan_json, null, 2)
+                  : "No prior plan recorded"}
+              </pre>
+            </div>
+
+            <div className="card" style={{ borderColor: "var(--ok-border)" }}>
+              <div className="card-header" style={{ background: "var(--ok-bg)" }}>
+                <span className="card-title mono-sm" style={{ color: "var(--ok)" }}>
+                  Hypothetical plan (After)
                 </span>
-                {diff.sort.before > diff.sort.after && (
-                  <span className="text-[10px] text-emerald-400">Sort removed!</span>
+                {experiment.after_cost != null && (
+                  <span className="badge badge-ok">cost {experiment.after_cost.toFixed(1)}</span>
                 )}
               </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Storage estimate */}
-      {experiment.storage_estimate_bytes && (
-        <div className="flex items-center gap-3 rounded-lg border border-white/8 bg-secondary/20 px-4 py-3 mb-4">
-          <Layers className="h-4 w-4 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            Estimated index size: <span className="text-foreground font-medium">
-              {formatBytes(experiment.storage_estimate_bytes)}
-            </span>
-          </p>
-        </div>
-      )}
-
-      {/* Before / After plan split */}
-      {isComplete && (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="glass-card rounded-xl">
-            <div className="px-4 py-2.5 border-b border-white/8">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Before Plan</p>
+              <pre style={{
+                padding: "12px 16px",
+                fontSize: 11,
+                fontFamily: "var(--font-mono)",
+                color: "var(--text)",
+                maxHeight: 300,
+                overflowY: "auto",
+                lineHeight: 1.5,
+                margin: 0,
+              }}>
+                {experiment.after_plan_json
+                  ? JSON.stringify(experiment.after_plan_json, null, 2)
+                  : "Hypothetical plan not available"}
+              </pre>
             </div>
-            <pre className="p-4 text-[10px] font-mono text-foreground/70 overflow-x-auto scrollbar-thin max-h-64">
-              {JSON.stringify(experiment.before_plan_json, null, 2)}
-            </pre>
           </div>
-          <div className="glass-card rounded-xl border border-emerald-500/20">
-            <div className="px-4 py-2.5 border-b border-white/8">
-              <p className="text-xs font-semibold text-emerald-400 uppercase tracking-widest">
-                Hypothetical Plan {experiment.hypopg_available ? "" : "(no HypoPG)"}
-              </p>
-            </div>
-            <pre className="p-4 text-[10px] font-mono text-foreground/70 overflow-x-auto scrollbar-thin max-h-64">
-              {JSON.stringify(experiment.after_plan_json, null, 2)}
-            </pre>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Error state */}
-      {experiment.status === "failed" && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-          <p className="text-sm font-medium text-destructive">{experiment.error_code}</p>
-          <p className="text-xs text-destructive/70 mt-1">{experiment.error_message}</p>
-        </div>
-      )}
+        {/* Error state */}
+        {experiment.status === "failed" && (
+          <div className="alert alert-danger">
+            <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+            <div>
+              <strong>{experiment.error_code ?? "Execution error"}</strong>
+              <div style={{ marginTop: 2 }}>{experiment.error_message}</div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

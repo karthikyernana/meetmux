@@ -61,7 +61,7 @@ class Connection(Base):
     username: Mapped[str] = mapped_column(String(255), nullable=False)
     credential_reference: Mapped[str] = mapped_column(Text, nullable=False)
     ssl_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="prefer")
-    server_version: Mapped[Optional[str]] = mapped_column(String(50))
+    server_version: Mapped[Optional[str]] = mapped_column(String(255))
     capability_status: Mapped[Optional[dict]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

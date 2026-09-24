@@ -39,10 +39,14 @@ def _columns_from_condition(cond: str | None) -> list[str]:
     results: list[str] = []
     for m in _COLUMN_RE.finditer(cond):
         col = m.group(1).lower()
-        # Filter PostgreSQL keywords
+        # Filter PostgreSQL keywords and type names
         if col in {
             "and", "or", "not", "null", "true", "false", "is", "in",
             "like", "between", "exists", "any", "all", "as", "on",
+            "text", "varchar", "int", "integer", "bigint", "smallint",
+            "boolean", "bool", "numeric", "decimal", "date", "timestamp",
+            "timestamptz", "json", "jsonb", "uuid", "float", "double",
+            "precision", "char", "character", "bytea",
         }:
             continue
         if col not in seen:

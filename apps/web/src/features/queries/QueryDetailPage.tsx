@@ -50,6 +50,19 @@ export function QueryDetailPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const expMut = useMutation({
+    mutationFn: async (candidateId: string) => {
+      const exp = await api.experiments.create(candidateId, queryId!);
+      await api.experiments.run(exp.id);
+      return exp;
+    },
+    onSuccess: (exp) => {
+      toast.success("Simulation experiment launched");
+      navigate(`/workspaces/${workspaceId}/queries/${queryId}/experiments/${exp.id}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   if (isLoading) {
     return (
       <div className="page-body">
@@ -207,9 +220,14 @@ export function QueryDetailPage() {
                       <td className="r">
                         <button
                           className="btn btn-secondary btn-sm"
-                          onClick={() => toast.info("Experiment flow coming soon")}
+                          disabled={expMut.isPending}
+                          onClick={() => {
+                            if (c.id) expMut.mutate(c.id);
+                            else toast.error("Candidate ID missing");
+                          }}
                         >
-                          <FlaskConical size={12} /> Run experiment
+                          {expMut.isPending ? <Loader2 size={12} className="spin" /> : <FlaskConical size={12} />}
+                          Run experiment
                         </button>
                       </td>
                     </tr>

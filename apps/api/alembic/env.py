@@ -20,14 +20,14 @@ from app.domains.plans.models import PlanSnapshot  # noqa: F401
 from app.domains.indexes.models import IndexCandidate, IndexRecord  # noqa: F401
 from app.domains.experiments.models import Experiment, Recommendation, MigrationArtifact  # noqa: F401
 
+from app.core.settings import get_settings
+
 config = context.config
 
-# Override sqlalchemy.url from environment if present
-database_url = os.getenv("DATABASE_URL", "")
-if database_url:
-    # Alembic needs sync URL — strip async driver prefix
-    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    config.set_main_option("sqlalchemy.url", sync_url)
+# Override sqlalchemy.url from settings / environment
+database_url = os.getenv("DATABASE_URL") or str(get_settings().database_url)
+sync_url = str(database_url).replace("postgresql+asyncpg://", "postgresql+psycopg://")
+config.set_main_option("sqlalchemy.url", sync_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

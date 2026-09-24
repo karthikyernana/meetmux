@@ -50,6 +50,10 @@ export function WorkspaceOverviewPage() {
     onSuccess: () => {
       toast.success("Workload capture started");
       qc.invalidateQueries({ queryKey: ["workspace", workspaceId] });
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ["queries", workspaceId] });
+        qc.invalidateQueries({ queryKey: ["indexes", workspaceId] });
+      }, 2500);
     },
     onError: (e: Error) => toast.error(e.message),
   });

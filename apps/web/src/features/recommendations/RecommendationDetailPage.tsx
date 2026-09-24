@@ -78,14 +78,23 @@ export function RecommendationDetailPage() {
     enabled: !!recommendationId,
   });
 
+  const { data: initialMigration } = useQuery({
+    queryKey: ["migration", recommendationId],
+    queryFn: () => api.recommendations.generateMigration(recommendationId!),
+    enabled: !!recommendationId,
+    retry: false,
+  });
+
   const migMut = useMutation({
     mutationFn: () => api.recommendations.generateMigration(recommendationId!),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["migration", recommendationId] });
+    onSuccess: (data) => {
+      qc.setQueryData(["migration", recommendationId], data);
       toast.success("Migration SQL generated");
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const migration = migMut.data ?? initialMigration;
 
   if (isLoading) {
     return (
@@ -204,7 +213,7 @@ export function RecommendationDetailPage() {
         )}
 
         {/* Migration SQL */}
-        {!migMut.data ? (
+        {!migration ? (
           <div className="empty" style={{ border: "1px dashed var(--border)", borderRadius: 8, padding: "28px 16px" }}>
             <Download size={24} className="empty-icon" />
             <p className="empty-title">Generate migration SQL</p>
@@ -228,8 +237,8 @@ export function RecommendationDetailPage() {
               <AlertTriangle size={14} style={{ flexShrink: 0 }} />
               <span>Review carefully before executing in production. PlanGuard does not run migrations.</span>
             </div>
-            <SqlBlock sql={migMut.data.sql_text} label={`CREATE INDEX — ${migMut.data.index_name}`} />
-            {migMut.data.rollback_sql_text && (
+            <SqlBlock sql={migration.sql_text} label={`CREATE INDEX — ${migration.index_name}`} />
+            {migration.rollback_sql_text && (
               <div>
                 <button
                   className="btn btn-ghost btn-sm"
@@ -240,7 +249,7 @@ export function RecommendationDetailPage() {
                   {rollbackExpanded ? "Hide" : "Show"} rollback SQL
                 </button>
                 {rollbackExpanded && (
-                  <SqlBlock sql={migMut.data.rollback_sql_text} label="Rollback — DROP INDEX" />
+                  <SqlBlock sql={migration.rollback_sql_text} label="Rollback — DROP INDEX" />
                 )}
               </div>
             )}
